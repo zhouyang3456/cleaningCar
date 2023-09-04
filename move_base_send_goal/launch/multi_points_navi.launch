@@ -1,0 +1,6 @@
+<launch>
+    <node pkg="move_base_send_goal" type="move_base_goalsending" name="move_base_goalsending" output="screen" >
+        <param name = "points_path_" type = "string" value = "/home/aaa/catkin_qt/src/move_base_send_goal/json/goal.json" />
+        <!-- <param name = "points_path_" type = "string" value = "/home/aaa/catkin_qt/src/demo_smarco_robot/etc/recordPath/record_path.json" /> -->
+    </node>
+</launch>

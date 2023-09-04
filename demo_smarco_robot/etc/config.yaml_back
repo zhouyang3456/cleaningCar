@@ -1,0 +1,8 @@
+robot:
+ id: 6688
+ server_addr: 192.168.1.9
+ server_port: 6789
+ line_speed: 0.2
+ raw_speed: 0.2
+filePath:
+ recordPathJson_dir: /home/aaa/catkin_qt/src/demo_smarco_robot/etc/record_path.json
