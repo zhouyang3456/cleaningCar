@@ -1,17 +1,17 @@
-robot:
-  raw_speed: 0.2
-  id: 6688
-  server_addr: 192.168.1.9
-  pose_estimate:
-    ori_z: 0.0009787011285418209
-    ori_w: 0.999999286166236
-    pos_x: 9.485099354046044
-    pos_y: 25.65624701050613
-  server_port: 6789
-  line_speed: 0.2
-  floor: 3
-  filesDir: /home/aaa/catkin_qt/src/demo_smarco_robot/etc
 filePath:
-  # recordPathJson_dir: /home/aaa/catkin_qt/src/demo_smarco_robot/etc/recordPath/record_path.json
   recordPathJson_dir: /home/aaa/catkin_qt/src/demo_smarco_robot/etc/recordPath/
-  electronicFence_dir: 
+  electronicFence_dir: ~
+robot:
+  floor: 3
+  server_port: 6789
+  server_addr: 192.168.1.9
+  raw_speed: 0.2
+  filesDir: /home/aaa/catkin_qt/src/demo_smarco_robot/etc
+  id: 230708065
+  line_speed: 0.2
+ftp:
+  port: 32321
+  user: myftp
+  uploadDir: /upload
+  host: 221.231.13.226
+  pwd: myftp@2023

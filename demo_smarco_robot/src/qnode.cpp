@@ -52,7 +52,6 @@ bool QNode::init() {
 	}
 	ros::start(); // explicitly needed since our nodehandle is going out of scope.
 	ros::NodeHandle n;
-
     // Add your ros communications here.
     topic_init(n);
     start();
@@ -139,6 +138,7 @@ void QNode::topic_init(ros::NodeHandle &n)
     pathFiles_pub = n.advertise<stringVector>("/multiPoints_navi/pathFiles", 1);
     poseEstimate_pub = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
     electronicFenceMaster_pub = n.advertise<geometry_msgs::Polygon>("/ElectronicFenceMaster", 1);
+    initialpose_pub = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("initialpose", 1);
 
     // Sleep to ensure topic register success
     ros::Duration(3.0).sleep();
@@ -283,6 +283,12 @@ void QNode::pub_pathFiles(stringVector &sv)
 void QNode::pub_electronicFence(geometry_msgs::Polygon fence)
 {
     electronicFenceMaster_pub.publish(fence);
+    ros::spinOnce();
+}
+
+void QNode::pub_initialpose(geometry_msgs::PoseWithCovarianceStamped pose)
+{
+    initialpose_pub.publish(pose);
     ros::spinOnce();
 }
 

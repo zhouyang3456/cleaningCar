@@ -28,6 +28,7 @@
 #include "mytcpclient.hpp"
 #include "prasedata.hpp"
 #include "mytcpserver.hpp"
+#include "ftpclient.hpp"
 
 #include <QFileSystemModel>
 #include <visualization_msgs/Marker.h>
@@ -79,28 +80,43 @@ private:
     PraseData* pd;
     MyTcpServer* m_tcpServer;
     QFileSystemModel m_fileModel;
-
+    FtpClient* m_ftpClient;
     QTimer* recordPath_timer;
     QTimer* currentPose_timer;
 
 private:
+    void sendTcpData(QByteArray datagram);
+
     void handleData(uint8_t command,uint32_t roboid, QByteArray r_data);
     void handle_recordPath(QByteArray data_);
     void write_pathPointsToJson(nav_msgs::Path path_, std::string filePath_);
-    void handle_cleaning(QByteArray data_);
-    QByteArray handle_batteryCapacity();
     void timer_init();
     void startCleaning(QByteArray data_);
     void pubElectronicFence();
+    void pubInitialPose();
     QByteArray poseToQbyteArray(geometry_msgs::Pose pos);
+
+    void handle_cleaning(QByteArray data_);
+    QByteArray handle_batteryCapacity();
+    void handle_setPose(QByteArray data_);
+    QPolygonF rdatatopolygen(QByteArray r_data);
+    void handle_changeMap(QByteArray data_);
+    void handle_ftpUploadPath();
+    void handle_ftpUploadMap();
 
     // TEST
     void send_dirFiles();
     void clear_rviz();
+    QString executeLinuxCmd(QString strCmd);
+    void processPath(nav_msgs::Path& path);
+
+Q_SIGNALS:
+    void mapChanged_signal(int floorNum);
 
 private slots:
     void clientReadyRead_handler(QByteArray datagram);
     void serverDataReady_handler(QString addr, int port, int sockDesc, QByteArray datagram);
+    void mapChanged_slot(int floorNum);
 
     void robotInit_handler(Robot* robot_);
     void cloud_handleData(uint8_t command,uint32_t roboid, QByteArray r_data);
@@ -123,15 +139,19 @@ private slots:
 
 const uint8_t BATTERY_CAPACITY = 0x01;
 const uint8_t ROBOT_POS = 0x05;
+const uint8_t SET_POSE = 0x07;
 const uint8_t UP = 0x11;
 const uint8_t LEFT = 0x13;
 const uint8_t RIGHT = 0x15;
 const uint8_t DOWN = 0x17;
+const uint8_t CHANGE_MAP = 0x36;
 const uint8_t CURRENT_POSE_AS_RETURN_POINT = 0x49;
 const uint8_t RECORD_PATH = 0x53;
 const uint8_t CLEANING = 0x55;
 const uint8_t CLEANING_PROGRESS = 0x61;
 const uint8_t CLEANING_TIME = 0x62;
+const uint8_t FTP_UPLOAD_PATH = 0x66;
+const uint8_t FTP_UPLOAD_MAP = 0x67;
 
 
 #endif // demo_smarco_robot_MAIN_WINDOW_H

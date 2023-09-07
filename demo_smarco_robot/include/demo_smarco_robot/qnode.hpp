@@ -86,6 +86,7 @@ public:
     void pub_poseEstimate(geometry_msgs::PoseWithCovarianceStamped& pose_);
     void pub_pathFiles(stringVector & sv);
     void pub_electronicFence(geometry_msgs::Polygon fence);
+    void pub_initialpose(geometry_msgs::PoseWithCovarianceStamped pose);
 
 private:
 	int init_argc;
@@ -100,13 +101,16 @@ private:
 
     ros::Publisher chatter_publisher;
     ros::Publisher cmd_pub;
-    ros::Publisher rvizPath_pub;
-    ros::Publisher rvizPoseArray_pub;
-    ros::Publisher rvizMarker_pub;
     ros::Publisher multiNavi_pub;
     ros::Publisher pathFiles_pub;
     ros::Publisher poseEstimate_pub;
     ros::Publisher electronicFenceMaster_pub;
+    ros::Publisher initialpose_pub;
+
+
+    ros::Publisher rvizPath_pub;
+    ros::Publisher rvizPoseArray_pub;
+    ros::Publisher rvizMarker_pub;
 
 
 private:

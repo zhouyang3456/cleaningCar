@@ -13,8 +13,6 @@ namespace demo_smarco_robot {
 Robot::Robot()
 {
     status = FREE;
-    recordPath_.header.frame_id = "map";
-    poseEstimate.header.frame_id = "map";
 }
 
 void Robot::robot_init(std::string config_path)
@@ -22,24 +20,34 @@ void Robot::robot_init(std::string config_path)
     using namespace std;
     YAML::Node config = YAML::LoadFile(config_path);
     id = config["robot"]["id"].as<uint32_t>();
+
     server_addr = QString::fromStdString(config["robot"]["server_addr"].as<string>());
     server_port = config["robot"]["server_port"].as<uint16_t>();
     line_speed = config["robot"]["line_speed"].as<float>();
     raw_speed = config["robot"]["raw_speed"].as<float>();
-    poseEstimate.pose.pose.position.x =
-            config["robot"]["pose_estimate"]["pos_x"].as<double>();
-    poseEstimate.pose.pose.position.y =
-            config["robot"]["pose_estimate"]["pos_y"].as<double>();
-    poseEstimate.pose.pose.orientation.z =
-            config["robot"]["pose_estimate"]["ori_z"].as<double>();
-    poseEstimate.pose.pose.orientation.w =
-            config["robot"]["pose_estimate"]["ori_w"].as<double>();
-    floor = config["robot"]["floor"].as<string>();
-    filesDir = config["robot"]["filesDir"].as<string>();
 
-    // recordPathJson_dir = config["filePath"]["recordPathJson_dir"].as<string>();
-    recordPathJson_dir = filesDir + "/" + floor + "/recordPath/";
+    floor = config["robot"]["floor"].as<string>();
+
+    filesDir = config["robot"]["filesDir"].as<string>();
+     recordPathJson_dir = filesDir + "/" + floor + "/recordPath/";
     electronicFence_dir = filesDir + "/" + floor + "/fence/";
+    map_dir             = filesDir + "/" + floor + "/map/";
+    initialPose_dir     = filesDir + "/" + floor + "/initialPose/";
+
+    ftp_host = QString::fromStdString(config["ftp"]["host"].as<string>());
+    ftp_port = config["ftp"]["port"].as<int>();
+    ftp_user = QString::fromStdString(config["ftp"]["user"].as<string>());
+    ftp_pwd  = QString::fromStdString(config["ftp"]["pwd"].as<string>());
+
+    ftpUpload_dir  = config["ftp"]["uploadDir"].as<string>();
+    ftpUpload_recordPathJson_dir =
+            ftpUpload_dir + "/" + std::to_string(id) + "/" + floor + "/recordPath/";
+    ftpUpload_electronicFence_dir =
+            ftpUpload_dir + "/" + std::to_string(id) + "/" + floor + "/fence/";
+    ftpUpload_map_dir =
+            ftpUpload_dir + "/" + std::to_string(id) + "/" + floor + "/map/";
+    ftpUpload_initialPose_dir =
+            ftpUpload_dir + "/" + std::to_string(id) + "/" + floor + "/initialPose/";
 }
 
 void Robot::write_config()
@@ -48,15 +56,7 @@ void Robot::write_config()
     YAML::Node config = YAML::LoadFile(configYaml_dir);
     config["robot"]["line_speed"] = line_speed;
     config["robot"]["raw_speed"] = raw_speed;
-
-    config["robot"]["pose_estimate"]["pos_x"] =
-                            poseEstimate.pose.pose.position.x;
-    config["robot"]["pose_estimate"]["pos_y"] =
-                            poseEstimate.pose.pose.position.y;
-    config["robot"]["pose_estimate"]["ori_z"] =
-                            poseEstimate.pose.pose.orientation.z;
-    config["robot"]["pose_estimate"]["ori_w"] =
-                            poseEstimate.pose.pose.orientation.w;
+    config["robot"]["floor"] = floor;
 
     std::fstream fs(configYaml_dir, std::fstream::out | std::fstream::trunc);
     fs << config;

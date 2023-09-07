@@ -42,8 +42,21 @@ private:
     std::string floor;
     std::string filesDir;
 
+    QString ftp_host;
+    int ftp_port;
+    QString ftp_user;
+    QString ftp_pwd;
+
+    std::string ftpUpload_dir;
+    std::string ftpUpload_recordPathJson_dir;
+    std::string ftpUpload_electronicFence_dir;
+    std::string ftpUpload_map_dir;
+    std::string ftpUpload_initialPose_dir;
+
     std::string recordPathJson_dir;
     std::string electronicFence_dir;
+    std::string map_dir;
+    std::string initialPose_dir;
 
     double recordPath_distance = 4.0;
     double recordPath_angular = 3.14 / 8;

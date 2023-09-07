@@ -68,44 +68,63 @@ MainWindow::~MainWindow() {}
 void MainWindow::robotInit_handler(Robot* robot_)
 {
     robot = robot_;
-    while (!ros::ok());
 
+    /*********************
+    ** Praser
+    **********************/
     pd = new PraseData;
     connect(pd, SIGNAL(praseCloudData_signal(uint8_t, uint32_t, QByteArray)),
             this, SLOT(cloud_handleData(uint8_t, uint32_t, QByteArray)));
     connect(pd, SIGNAL(praseServerData_signal(uint8_t, uint32_t, QByteArray)),
             this, SLOT(server_handleData(uint8_t, uint32_t, QByteArray)));
 
+    /*********************
+    ** TCP Client
+    **********************/
     m_tcpClient = new MyTcpClient(robot->server_addr, robot->server_port);
     m_tcpClient->moveToThread(m_tcpClient);
-    // m_tcpClient->start();
     connect(m_tcpClient, SIGNAL(clientReadyRead_signal(QByteArray)), this, SLOT(clientReadyRead_handler(QByteArray)));
+    // m_tcpClient->start();
 
-    // qnode.pub_poseEstimate(robot->poseEstimate);
-
+    /*********************
+    ** TCP Server
+    **********************/
     m_tcpServer = new MyTcpServer();
     m_tcpServer->listen(QHostAddress::Any, 12346);
-    qDebug() << "TCP Server" << "\033[1;32mListening ...\033[0m";
     connect(m_tcpServer, SIGNAL(dataReady(QString, int, int, QByteArray)),
             this, SLOT(serverDataReady_handler(QString, int, int, QByteArray)));
+    qDebug() << "TCP Server" << "\033[1;32mListening ...\033[0m";
 
-    timer_init();
+    /*********************
+    ** FTP Client
+    **********************/
+    m_ftpClient = new FtpClient(robot->ftp_host,
+                                robot->ftp_port,
+                                robot->ftp_user,
+                                robot->ftp_pwd);
 
+    /*********************
+    ** Others
+    **********************/
     connect(&qnode, SIGNAL(progress_signal(int)),
             this, SLOT(progress_handler(int)));
     connect(&qnode, SIGNAL(runTime_signal(uint)),
             this, SLOT(runTime_handler(uint)));
+    connect(this, SIGNAL(mapChanged_signal(int)),
+            this, SLOT(mapChanged_slot(int)));
+    recordPath_timer = new QTimer(this);
+    connect(recordPath_timer, SIGNAL(timeout()), this, SLOT(slot_recordPath_timeout()));
 
+    /*********************
+    ** Initial
+    **********************/
+    timer_init();
+    pubInitialPose();
     pubElectronicFence();
-
-
 }
 
 void MainWindow::timer_init()
 {
-    recordPath_timer = new QTimer(this);
-    connect(recordPath_timer, SIGNAL(timeout()), this, SLOT(slot_recordPath_timeout()));
-
     currentPose_timer = new QTimer(this);
     connect(currentPose_timer, SIGNAL(timeout()), this, SLOT(currentPose_timeout()));
     // currentPose_timer->start(5000);
@@ -173,45 +192,69 @@ void MainWindow::updateLoggingView() {
     ui.view_logging->scrollToBottom();
 }
 
+void MainWindow::sendTcpData(QByteArray datagram)
+{
+    if (m_tcpClient->isRunning()) {
+        m_tcpClient->send_data(datagram);
+    }
+    m_tcpServer->sendData(datagram);
+}
+
 void MainWindow::handleData(uint8_t command, uint32_t roboid, QByteArray r_data)
 {
     switch (command) {
-        case BATTERY_CAPACITY: {
-            QByteArray datagram = handle_batteryCapacity();
-            m_tcpServer->sendData(datagram);
-            break;
-        }
+    case BATTERY_CAPACITY: {
+        QByteArray datagram = handle_batteryCapacity();
+//        m_tcpServer->sendData(datagram);
+        sendTcpData(datagram);
+        break;
+    }
 
-        case UP:
-            qnode.move_base('i', robot->line_speed, robot->raw_speed);
-            break;
+    case SET_POSE:
+        handle_setPose(r_data);
+        break;
 
-        case LEFT:
-            qnode.move_base('j', robot->line_speed, robot->raw_speed);
-            break;
+    case UP:
+        qnode.move_base('i', robot->line_speed, robot->raw_speed);
+        break;
 
-        case RIGHT:
-            qnode.move_base('l', robot->line_speed, robot->raw_speed);
-            break;
+    case LEFT:
+        qnode.move_base('j', robot->line_speed, robot->raw_speed);
+        break;
 
-        case DOWN:
-            qnode.move_base(',', robot->line_speed, robot->raw_speed);
-            break;
+    case RIGHT:
+        qnode.move_base('l', robot->line_speed, robot->raw_speed);
+        break;
 
-        case CURRENT_POSE_AS_RETURN_POINT:
-            robot->set_poseEstimate();
-            break;
+    case DOWN:
+        qnode.move_base(',', robot->line_speed, robot->raw_speed);
+        break;
 
-        case RECORD_PATH:
-            handle_recordPath(r_data);
-            break;
+    case CHANGE_MAP:
+        handle_changeMap(r_data);
 
-        case CLEANING:
-            handle_cleaning(r_data);
-            break;
+    case CURRENT_POSE_AS_RETURN_POINT:
+        robot->set_poseEstimate();
+        break;
 
-        default:
-            break;
+    case RECORD_PATH:
+        handle_recordPath(r_data);
+        break;
+
+    case CLEANING:
+        handle_cleaning(r_data);
+        break;
+
+    case FTP_UPLOAD_PATH:
+        handle_ftpUploadPath();
+        break;
+
+    case FTP_UPLOAD_MAP:
+        handle_ftpUploadMap();
+        break;
+
+    default:
+        break;
     }
 }
 
@@ -234,8 +277,10 @@ void MainWindow::handle_recordPath(QByteArray data_)
                 recordPath_timer->stop();
                 // Add the last position point to path
                 robot->recordPath_.poses.push_back(robot->pose);
-                if(robot->recordPath_.poses.size() >= 2)
+                if(robot->recordPath_.poses.size() >= 2) {
+                    processPath(robot->recordPath_);
                     write_pathPointsToJson(robot->recordPath_, robot->recordPathJson_dir);
+                }
                 else
                     ROS_INFO("Path Points less than 2");
                 robot->status = Robot::FREE;
@@ -282,7 +327,8 @@ void MainWindow::currentPose_timeout()
 {
     QByteArray poseByteArray = poseToQbyteArray(robot->pose.pose);
     QByteArray dataSend = pd->serialize_data(ROBOT_POS, robot->id, poseByteArray);
-    m_tcpServer->sendData(dataSend);
+//    m_tcpServer->sendData(dataSend);
+    sendTcpData(dataSend);
 }
 
 void MainWindow::write_pathPointsToJson(nav_msgs::Path path_, std::string filePath_)
@@ -344,6 +390,113 @@ QByteArray MainWindow::handle_batteryCapacity()
     return dataSend;
 }
 
+void MainWindow::handle_setPose(QByteArray data_)
+{
+    QPolygonF current_pos = rdatatopolygen(data_);
+//    qDebug() << current_pos;
+    QPointF startcurrentpos = current_pos.at(0);
+    QPointF lastcurrentpos = current_pos.at(1);
+    geometry_msgs::Quaternion currentpos_quat;
+    double tan_radian = (lastcurrentpos.y()-startcurrentpos.y())/(lastcurrentpos.x()-startcurrentpos.x());
+    double radian = atan(tan_radian);
+    if(lastcurrentpos.x()>=startcurrentpos.x())
+    {
+        currentpos_quat = tf::createQuaternionMsgFromYaw(radian);
+    }
+    else if((lastcurrentpos.x()<startcurrentpos.x()) &&  (lastcurrentpos.y()>=startcurrentpos.y()))
+    {
+        currentpos_quat = tf::createQuaternionMsgFromYaw(radian + 3.1415);
+    }
+    else if((lastcurrentpos.x()<startcurrentpos.x()) &&  (lastcurrentpos.y()<startcurrentpos.y()))
+    {
+        currentpos_quat = tf::createQuaternionMsgFromYaw(radian - 3.1415);
+    }
+//    qnode.set_start("map",startcurrentpos.x(),startcurrentpos.y(),currentpos_quat.z,currentpos_quat.w);
+    geometry_msgs::PoseWithCovarianceStamped pose;
+    pose.header.frame_id = "map";
+    pose.header.stamp=ros::Time::now();
+    pose.pose.pose.position.x = startcurrentpos.x();
+    pose.pose.pose.position.y = startcurrentpos.y();
+    pose.pose.pose.position.z = 0;
+    pose.pose.pose.orientation.x = 0;
+    pose.pose.pose.orientation.y = 0;
+    pose.pose.pose.orientation.z = currentpos_quat.z;
+    pose.pose.pose.orientation.w = currentpos_quat.w;
+    qnode.pub_initialpose(pose);
+}
+
+QPolygonF MainWindow::rdatatopolygen(QByteArray r_data)
+{
+//    qDebug() << r_data.toHex();
+    QPolygonF poly;
+    uint8_t datagram_at3 = (uint8_t)r_data.at(3);//现将二进制数据流转为uint_8型，否则数据转32位会出错
+    uint8_t datagram_at2 = (uint8_t)r_data.at(2);
+    uint8_t datagram_at1 = (uint8_t)r_data.at(1);
+    uint8_t datagram_at0 = (uint8_t)r_data.at(0);
+    int start_x = ((uint32_t)datagram_at0<<24)+((uint32_t)datagram_at1<<16)+((uint32_t)datagram_at2<<8)+(uint32_t)datagram_at3;
+    uint8_t datagram_at7 = (uint8_t)r_data.at(7);//现将二进制数据流转为uint_8型，否则数据转32位会出错
+    uint8_t datagram_at6 = (uint8_t)r_data.at(6);
+    uint8_t datagram_at5 = (uint8_t)r_data.at(5);
+    uint8_t datagram_at4 = (uint8_t)r_data.at(4);
+    int start_y = ((uint32_t)datagram_at4<<24)+((uint32_t)datagram_at5<<16)+((uint32_t)datagram_at6<<8)+(uint32_t)datagram_at7;
+    uint8_t datagram_at11 = (uint8_t)r_data.at(11);//现将二进制数据流转为uint_8型，否则数据转32位会出错
+    uint8_t datagram_at10 = (uint8_t)r_data.at(10);
+    uint8_t datagram_at9 = (uint8_t)r_data.at(9);
+    uint8_t datagram_at8 = (uint8_t)r_data.at(8);
+    int last_x = ((uint32_t)datagram_at8<<24)+((uint32_t)datagram_at9<<16)+((uint32_t)datagram_at10<<8)+(uint32_t)datagram_at11;
+    uint8_t datagram_at15 = (uint8_t)r_data.at(15);//现将二进制数据流转为uint_8型，否则数据转32位会出错
+    uint8_t datagram_at14 = (uint8_t)r_data.at(14);
+    uint8_t datagram_at13 = (uint8_t)r_data.at(13);
+    uint8_t datagram_at12 = (uint8_t)r_data.at(12);
+    int last_y = ((uint32_t)datagram_at12<<24)+((uint32_t)datagram_at13<<16)+((uint32_t)datagram_at14<<8)+(uint32_t)datagram_at15;
+    poly.clear();
+    poly.push_back(QPointF(start_x/10000.0,start_y/10000.0));
+    poly.push_back(QPointF(last_x/10000.0,last_y/10000.0));
+    return poly;
+
+}
+
+void MainWindow::handle_changeMap(QByteArray data_)
+{
+    int floorNum = static_cast<int>(data_[0]);
+    std::string mapFilePath = robot->filesDir + "/"
+                           +  std::to_string(floorNum) + "/map/"
+                           +  "smarco_F"
+                           +  std::to_string(floorNum)
+                           +  ".yaml";
+//    std::cout << "mapFilePath is " << mapFilePath << std::endl;
+    QString cmd = "rosrun map_server map_server " + QString::fromStdString(mapFilePath);
+    executeLinuxCmd(cmd);
+    emit mapChanged_signal(floorNum);
+}
+
+void MainWindow::handle_ftpUploadPath()
+{
+    QDir directory(robot->recordPathJson_dir.c_str());
+    QStringList files = directory.entryList(QDir::Files);
+    qDebug() << files;
+
+    for (auto i = files.begin(); i != files.end(); i++) {
+        std::string sourceRealPath = robot->recordPathJson_dir + (*i).toStdString();
+        std::string destRealPath = robot->ftpUpload_recordPathJson_dir + (*i).toStdString();
+        m_ftpClient->ftpPut(QString::fromStdString(sourceRealPath),
+                            QString::fromStdString(destRealPath));
+    }
+}
+
+void MainWindow::handle_ftpUploadMap()
+{
+    QDir directory(robot->map_dir.c_str());
+    QStringList files = directory.entryList(QDir::Files);
+    qDebug() << files;
+
+    for (auto i = files.begin(); i != files.end(); i++) {
+        std::string sourceRealPath = robot->map_dir + (*i).toStdString();
+        std::string destRealPath = robot->ftpUpload_map_dir + (*i).toStdString();
+        m_ftpClient->ftpPut(QString::fromStdString(sourceRealPath),
+                            QString::fromStdString(destRealPath));
+    }
+}
 
 void MainWindow::startCleaning(QByteArray data_)
 {
@@ -377,7 +530,7 @@ void MainWindow::startCleaning(QByteArray data_)
 void MainWindow::pubElectronicFence()
 {
     std::string fileRealpath = robot->electronicFence_dir + "fence.json";
-    std::cout << "fileRealpath = " << fileRealpath << std::endl;
+//    std::cout << "fileRealpath = " << fileRealpath << std::endl;
     geometry_msgs::Polygon  fence;
 
     // Read Json Data
@@ -401,6 +554,31 @@ void MainWindow::pubElectronicFence()
     in_.close();
 
     qnode.pub_electronicFence(fence);
+}
+
+void MainWindow::pubInitialPose()
+{
+    std::string fileRealpath = robot->initialPose_dir + "pose.json";
+    geometry_msgs::PoseWithCovarianceStamped pose;
+
+    // Read Json Data
+    Json::Reader reader_;
+    Json::Value root_;
+    std::ifstream in_;
+
+    in_.open(fileRealpath, std::ios::binary);
+    if (!in_.is_open()) {
+        std::cout << "Error opening file\n";
+        return;
+    }
+    if (reader_.parse(in_, root_)) {
+        pose.pose.pose.position.x = root_["goalname"][0]["location"][0].asDouble();
+        pose.pose.pose.position.y = root_["goalname"][0]["location"][1].asDouble();
+        pose.pose.pose.orientation.z = root_["goalname"][0]["location"][2].asDouble();
+        pose.pose.pose.orientation.w = root_["goalname"][0]["location"][3].asDouble();
+    }
+    in_.close();
+    qnode.pub_poseEstimate(pose);
 }
 
 QByteArray MainWindow::poseToQbyteArray(geometry_msgs::Pose pos)
@@ -469,6 +647,13 @@ void MainWindow::serverDataReady_handler(QString addr, int port, int sockDesc, Q
     pd->praseServerData(datagram);
 }
 
+void MainWindow::mapChanged_slot(int floorNum)
+{
+    robot->floor = std::to_string(floorNum);
+    robot->write_config();
+    robot->robot_init(robot->configYaml_dir);
+}
+
 /*****************************************************************************
 ** Implementation [Menu]
 *****************************************************************************/
@@ -530,6 +715,24 @@ void MainWindow::clear_rviz()
     visualization_msgs::Marker marker_msg;
     qnode.pub_rvizMarker(marker_msg);
     ros::spinOnce();
+}
+
+QString MainWindow::executeLinuxCmd(QString strCmd)
+{
+    QProcess::startDetached(strCmd);
+    return nullptr;
+}
+
+void MainWindow::processPath(nav_msgs::Path& path)
+{
+    auto i = path.poses.begin();
+    while (i != (path.poses.end() - 1)) {
+        if( robot->distance((*i).pose, (*(i+1)).pose) < 0.1) {
+            i = path.poses.erase(i);
+            continue;
+        }
+        i++;
+    }
 }
 
 void MainWindow::on_refresh_clicked()
@@ -600,8 +803,10 @@ void MainWindow::on_stopRecordPath_clicked()
         recordPath_timer->stop();
         // Add the last position point to path
         robot->recordPath_.poses.push_back(robot->pose);
-        if(robot->recordPath_.poses.size() >= 2)
+        if(robot->recordPath_.poses.size() >= 2) {
+            processPath(robot->recordPath_);
             write_pathPointsToJson(robot->recordPath_, robot->recordPathJson_dir);
+        }
         else
             ROS_INFO("Path Points less than 2");
         robot->status = Robot::FREE;
@@ -625,7 +830,8 @@ void MainWindow::progress_handler(int percentage)
     QByteArray perArray;
     perArray.append(per);
     QByteArray dataSend = pd->serialize_data(CLEANING_PROGRESS, robot->id, perArray);
-    m_tcpServer->sendData(dataSend);
+//    m_tcpServer->sendData(dataSend);
+    sendTcpData(dataSend);
 }
 
 void MainWindow::runTime_handler(uint time)
@@ -650,7 +856,8 @@ void MainWindow::runTime_handler(uint time)
     QByteArray byteArray(charArray, 4);
     std::reverse(byteArray.begin(), byteArray.end());   // Big-endian
     QByteArray dataSend = pd->serialize_data(CLEANING_TIME, robot->id, byteArray);
-    m_tcpServer->sendData(dataSend);
+//    m_tcpServer->sendData(dataSend);
+    sendTcpData(dataSend);
 }
 
 void MainWindow::on_delete_2_clicked()

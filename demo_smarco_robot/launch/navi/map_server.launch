@@ -1,0 +1,7 @@
+<launch>
+
+ <!-- 设置需要用于导航的地图  -->
+ <arg name="map_file" default="$(find demo_smarco_robot)/etc/3/map/smarco_F3.yaml"/>
+ <node name="map_server_for_test" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+</launch>
